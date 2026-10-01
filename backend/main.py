@@ -10,6 +10,11 @@ import segmentation_models_pytorch as smp
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Brain Tumor Segmentation API"
+)
 
 
 # ============================================================
@@ -18,6 +23,16 @@ from fastapi.responses import FileResponse
 
 app = FastAPI(
     title="Brain Tumor Segmentation API"
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -402,11 +417,44 @@ async def predict(
         # Return image
         # ----------------------------------------------------
 
-        return FileResponse(
-            output_path,
-            media_type="image/png",
-            filename="brain_tumor_prediction.png"
+        with open(output_path, "rb") as image_file:
+            image_base64 = base64.b64encode(
+                image_file.read()
+            ).decode("utf-8")
+
+        predicted_tumor_voxels = int(
+            np.sum(prediction_volume)
         )
+
+        predicted_tumor_slices = int(
+            np.sum(
+                np.any(
+                    prediction_volume == 1,
+                    axis=(0, 1)
+                )
+            )
+        )
+
+        largest_slice_area = int(
+            np.sum(
+                prediction_volume[:, :, best_slice]
+            )
+        )
+
+        return {
+            "filename": file.filename,
+            "volume_shape": [
+                int(height),
+                int(width),
+                int(num_slices)
+            ],
+            "total_slices": int(num_slices),
+            "predicted_tumor_slices": predicted_tumor_slices,
+            "largest_tumor_slice": best_slice,
+            "largest_slice_area_pixels": largest_slice_area,
+            "total_predicted_tumor_voxels": predicted_tumor_voxels,
+            "image": image_base64
+}
 
 
     finally:
