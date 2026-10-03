@@ -9,22 +9,25 @@ import numpy as np
 import torch
 import segmentation_models_pytorch as smp
 
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+
+# ============================================================
+# FastAPI Application
+# ============================================================
+
 app = FastAPI(
-    title="Brain Tumor Segmentation API"
+    title="Brain Tumor Segmentation API",
+    description="U-Net based whole-tumor segmentation from FLAIR MRI volumes.",
+    version="1.0.0"
 )
 
 
 # ============================================================
-# FastAPI
+# CORS
 # ============================================================
 
-app = FastAPI(
-    title="Brain Tumor Segmentation API"
-)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,13 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ============================================================
-# Paths
-# ============================================================
-
-MODEL_PATH = "../best_brain_tumor_unet.pth"
 
 
 # ============================================================
@@ -56,7 +52,7 @@ print("Using device:", device)
 
 
 # ============================================================
-# Load model ONCE when server starts
+# Model
 # ============================================================
 
 model = smp.Unet(
@@ -66,33 +62,139 @@ model = smp.Unet(
     classes=1
 )
 
-model.load_state_dict(
-    torch.load(
-        MODEL_PATH,
-        map_location=device
-    )
+
+# ============================================================
+# Load Model Checkpoint
+# ============================================================
+
+MODEL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "best_brain_tumor_unet.pth"
 )
 
-model = model.to(device)
+MODEL_PATH = os.path.abspath(MODEL_PATH)
+
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(
+        f"Model checkpoint not found: {MODEL_PATH}"
+    )
+
+state_dict = torch.load(
+    MODEL_PATH,
+    map_location=device
+)
+
+model.load_state_dict(state_dict)
+
+model.to(device)
+
 model.eval()
 
 print("Model loaded successfully!")
+print("Model path:", MODEL_PATH)
 
 
 # ============================================================
-# Home
+# Helper Function
+# Normalize MRI slice
+# ============================================================
+
+def normalize_slice(image_slice):
+
+    image_slice = image_slice.astype(
+        np.float32
+    )
+
+    image_min = float(
+        image_slice.min()
+    )
+
+    image_max = float(
+        image_slice.max()
+    )
+
+    if image_max > image_min:
+
+        image_slice = (
+            image_slice - image_min
+        ) / (
+            image_max - image_min
+        )
+
+    else:
+
+        image_slice = np.zeros_like(
+            image_slice
+        )
+
+    return image_slice
+
+
+# ============================================================
+# Helper Function
+# Encode grayscale PNG to Base64
+# ============================================================
+
+def encode_grayscale_image(image):
+
+    success, buffer = cv2.imencode(
+        ".png",
+        image
+    )
+
+    if not success:
+        raise RuntimeError(
+            "Failed to encode grayscale image."
+        )
+
+    return base64.b64encode(
+        buffer.tobytes()
+    ).decode("utf-8")
+
+
+# ============================================================
+# Helper Function
+# Encode RGB PNG to Base64
+# ============================================================
+
+def encode_rgb_image(image):
+
+    # OpenCV expects BGR when encoding.
+    image_bgr = cv2.cvtColor(
+        image,
+        cv2.COLOR_RGB2BGR
+    )
+
+    success, buffer = cv2.imencode(
+        ".png",
+        image_bgr
+    )
+
+    if not success:
+        raise RuntimeError(
+            "Failed to encode RGB image."
+        )
+
+    return base64.b64encode(
+        buffer.tobytes()
+    ).decode("utf-8")
+
+
+# ============================================================
+# Root Endpoint
 # ============================================================
 
 @app.get("/")
-def home():
+def root():
 
     return {
-        "message": "Brain Tumor Segmentation API is running"
+        "message": "Brain Tumor Segmentation API is running."
     }
 
 
 # ============================================================
-# Prediction
+# Prediction Endpoint
 # ============================================================
 
 @app.post("/predict")
@@ -100,37 +202,66 @@ async def predict(
     file: UploadFile = File(...)
 ):
 
-    print(
-        f"Received file: {file.filename}"
-    )
-
-
-    # --------------------------------------------------------
-    # Create temporary file
-    # --------------------------------------------------------
-
-    suffix = os.path.splitext(
-        file.filename
-    )[1]
-
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=suffix
-    ) as temp_file:
-
-        shutil.copyfileobj(
-            file.file,
-            temp_file
-        )
-
-        temp_path = temp_file.name
-
+    temp_path = None
 
     try:
 
-        # ----------------------------------------------------
-        # Load MRI
-        # ----------------------------------------------------
+        # ====================================================
+        # Validate filename
+        # ====================================================
+
+        if not file.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="No filename was provided."
+            )
+
+        filename_lower = file.filename.lower()
+
+        if not (
+            filename_lower.endswith(".nii")
+            or filename_lower.endswith(".nii.gz")
+        ):
+
+            raise HTTPException(
+                status_code=400,
+                detail="Only .nii and .nii.gz files are supported."
+            )
+
+
+        print("\nReceived file:", file.filename)
+
+
+        # ====================================================
+        # Determine temporary suffix
+        # ====================================================
+
+        if filename_lower.endswith(".nii.gz"):
+            suffix = ".nii.gz"
+        else:
+            suffix = ".nii"
+
+
+        # ====================================================
+        # Save uploaded file temporarily
+        # ====================================================
+
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=suffix
+        ) as temp_file:
+
+            shutil.copyfileobj(
+                file.file,
+                temp_file
+            )
+
+            temp_path = temp_file.name
+
+
+        # ====================================================
+        # Load NIfTI MRI
+        # ====================================================
 
         flair_nii = nib.load(
             temp_path
@@ -138,19 +269,40 @@ async def predict(
 
         flair_volume = flair_nii.get_fdata()
 
-        print(
-            "MRI shape:",
-            flair_volume.shape
+        if flair_volume.ndim != 3:
+
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded MRI must be a 3D NIfTI volume."
+            )
+
+
+        height = int(
+            flair_volume.shape[0]
+        )
+
+        width = int(
+            flair_volume.shape[1]
+        )
+
+        num_slices = int(
+            flair_volume.shape[2]
         )
 
 
-        # ----------------------------------------------------
-        # Create prediction volume
-        # ----------------------------------------------------
+        print(
+            "MRI shape:",
+            (
+                height,
+                width,
+                num_slices
+            )
+        )
 
-        height = flair_volume.shape[0]
-        width = flair_volume.shape[1]
-        num_slices = flair_volume.shape[2]
+
+        # ====================================================
+        # Prediction Volume
+        # ====================================================
 
         prediction_volume = np.zeros(
             (
@@ -162,121 +314,147 @@ async def predict(
         )
 
 
-        # ----------------------------------------------------
-        # Process every slice
-        # ----------------------------------------------------
-
-        for slice_index in range(
-            num_slices
-        ):
-
-            image_slice = flair_volume[
-                :,
-                :,
-                slice_index
-            ].astype(
-                np.float32
-            )
+        tumor_areas = []
 
 
-            # -----------------------------------------------
-            # Normalize
-            # -----------------------------------------------
+        # ====================================================
+        # Run segmentation for every MRI slice
+        # ====================================================
 
-            min_value = image_slice.min()
-            max_value = image_slice.max()
+        with torch.no_grad():
 
-            if max_value > min_value:
+            for slice_index in range(
+                num_slices
+            ):
 
-                image_slice = (
-                    image_slice - min_value
-                ) / (
-                    max_value - min_value
-                )
+                # --------------------------------------------
+                # Original MRI slice
+                # --------------------------------------------
 
-            else:
+                image_slice = flair_volume[
+                    :,
+                    :,
+                    slice_index
+                ].astype(np.float32)
 
-                image_slice = np.zeros_like(
+
+                # --------------------------------------------
+                # Normalize using same approach as training
+                # --------------------------------------------
+
+                image_slice = normalize_slice(
                     image_slice
                 )
 
 
-            # -----------------------------------------------
-            # Resize
-            # -----------------------------------------------
+                # --------------------------------------------
+                # Resize to model input size
+                # --------------------------------------------
 
-            image_resized = cv2.resize(
-                image_slice,
-                (256, 256),
-                interpolation=cv2.INTER_AREA
-            )
-
-
-            # -----------------------------------------------
-            # Tensor
-            # -----------------------------------------------
-
-            input_tensor = torch.tensor(
-                image_resized,
-                dtype=torch.float32
-            )
-
-            input_tensor = (
-                input_tensor
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .to(device)
-            )
-
-
-            # -----------------------------------------------
-            # Prediction
-            # -----------------------------------------------
-
-            with torch.no_grad():
-
-                output = model(
-                    input_tensor
+                resized_slice = cv2.resize(
+                    image_slice,
+                    (256, 256),
+                    interpolation=cv2.INTER_AREA
                 )
 
-                probability = torch.sigmoid(
-                    output
+
+                # --------------------------------------------
+                # Convert to tensor
+                #
+                # Shape:
+                # 256 x 256
+                # ->
+                # 1 x 1 x 256 x 256
+                # --------------------------------------------
+
+                tensor = torch.from_numpy(
+                    resized_slice
+                ).float()
+
+                tensor = tensor.unsqueeze(
+                    0
+                ).unsqueeze(
+                    0
                 )
 
-                prediction = (
-                    probability > 0.5
+                tensor = tensor.to(
+                    device
+                )
+
+
+                # --------------------------------------------
+                # Model prediction
+                # --------------------------------------------
+
+                logits = model(
+                    tensor
+                )
+
+                probabilities = torch.sigmoid(
+                    logits
+                )
+
+                predicted_mask = (
+                    probabilities > 0.5
                 ).float()
 
 
-            # -----------------------------------------------
-            # NumPy
-            # -----------------------------------------------
+                # --------------------------------------------
+                # Convert prediction to NumPy
+                # --------------------------------------------
 
-            prediction = (
-                prediction
-                .squeeze()
-                .cpu()
-                .numpy()
-                .astype(np.uint8)
-            )
-
-
-            # -----------------------------------------------
-            # Resize mask back
-            # -----------------------------------------------
-
-            prediction = cv2.resize(
-                prediction,
-                (width, height),
-                interpolation=cv2.INTER_NEAREST
-            )
+                predicted_mask = (
+                    predicted_mask
+                    .squeeze()
+                    .cpu()
+                    .numpy()
+                    .astype(np.uint8)
+                )
 
 
-            prediction_volume[
-                :,
-                :,
-                slice_index
-            ] = prediction
+                # --------------------------------------------
+                # Resize prediction back to original MRI size
+                # --------------------------------------------
+
+                predicted_mask = cv2.resize(
+                    predicted_mask,
+                    (
+                        width,
+                        height
+                    ),
+                    interpolation=cv2.INTER_NEAREST
+                )
+
+
+                predicted_mask = (
+                    predicted_mask > 0
+                ).astype(np.uint8)
+
+
+                # --------------------------------------------
+                # Store prediction
+                # --------------------------------------------
+
+                prediction_volume[
+                    :,
+                    :,
+                    slice_index
+                ] = predicted_mask
+
+
+                # --------------------------------------------
+                # Calculate area on this slice
+                # --------------------------------------------
+
+                tumor_area = int(
+                    np.sum(
+                        predicted_mask
+                    )
+                )
+
+                tumor_areas.append(
+                    tumor_area
+                )
 
 
         print(
@@ -284,184 +462,453 @@ async def predict(
         )
 
 
-        # ----------------------------------------------------
-        # Find largest predicted tumor
-        # ----------------------------------------------------
+        # ====================================================
+        # Find Largest Predicted Region
+        # ====================================================
 
-        tumor_areas = []
+        if len(tumor_areas) == 0:
 
-        for i in range(
-            num_slices
-        ):
+            best_slice = 0
 
-            area = np.sum(
-                prediction_volume[
-                    :,
-                    :,
-                    i
-                ]
-            )
+        else:
 
-            tumor_areas.append(
-                area
+            best_slice = int(
+                np.argmax(
+                    tumor_areas
+                )
             )
 
 
-        best_slice = int(
-            np.argmax(
-                tumor_areas
+        largest_slice_area = int(
+            tumor_areas[
+                best_slice
+            ]
+        )
+
+
+        # ====================================================
+        # Overall Prediction Statistics
+        # ====================================================
+
+        predicted_tumor_voxels = int(
+            np.sum(
+                prediction_volume
             )
         )
 
+
+        predicted_tumor_slices = int(
+            np.sum(
+                np.array(
+                    tumor_areas
+                ) > 0
+            )
+        )
+
+
+        # ====================================================
+        # NIfTI Voxel Spacing
+        # ====================================================
+
+        voxel_spacing_raw = (
+            flair_nii
+            .header
+            .get_zooms()[:3]
+        )
+
+
+        voxel_x = float(
+            voxel_spacing_raw[0]
+        )
+
+        voxel_y = float(
+            voxel_spacing_raw[1]
+        )
+
+        voxel_z = float(
+            voxel_spacing_raw[2]
+        )
+
+
+        voxel_spacing = [
+            voxel_x,
+            voxel_y,
+            voxel_z
+        ]
+
+
+        # ====================================================
+        # Predicted Segmentation Volume
+        #
+        # BraTS voxel dimensions are represented in millimeters.
+        #
+        # mm³ -> cm³:
+        # divide by 1000
+        # ====================================================
+
+        voxel_volume_mm3 = float(
+            voxel_x
+            * voxel_y
+            * voxel_z
+        )
+
+
+        predicted_volume_mm3 = float(
+            predicted_tumor_voxels
+            * voxel_volume_mm3
+        )
+
+
+        predicted_volume_cm3 = float(
+            predicted_volume_mm3
+            / 1000.0
+        )
+
+
+        predicted_volume_cm3 = float(
+            round(
+                predicted_volume_cm3,
+                2
+            )
+        )
+
+
+        # ====================================================
+        # Generate Visualizations for ALL Slices
+        # ====================================================
+
+        slice_visualizations = []
+
+
+        for slice_index in range(
+            num_slices
+        ):
+
+            # --------------------------------------------
+            # Original MRI
+            # --------------------------------------------
+
+            display_slice = flair_volume[
+                :,
+                :,
+                slice_index
+            ].astype(np.float32)
+
+
+            display_slice = normalize_slice(
+                display_slice
+            )
+
+
+            # --------------------------------------------
+            # Prediction
+            # --------------------------------------------
+
+            display_prediction = prediction_volume[
+                :,
+                :,
+                slice_index
+            ]
+
+
+            # --------------------------------------------
+            # Original MRI image
+            # --------------------------------------------
+
+            original_uint8 = (
+                display_slice
+                * 255
+            ).astype(np.uint8)
+
+
+            # --------------------------------------------
+            # Binary mask image
+            # --------------------------------------------
+
+            mask_uint8 = (
+                display_prediction
+                * 255
+            ).astype(np.uint8)
+
+
+            # --------------------------------------------
+            # Red segmentation overlay
+            # --------------------------------------------
+
+            overlay = np.stack(
+                [
+                    display_slice,
+                    display_slice,
+                    display_slice
+                ],
+                axis=-1
+            )
+
+
+            overlay[
+                display_prediction == 1
+            ] = [
+                1.0,
+                0.0,
+                0.0
+            ]
+
+
+            overlay_uint8 = (
+                overlay
+                * 255
+            ).astype(np.uint8)
+
+
+            # --------------------------------------------
+            # Encode images
+            # --------------------------------------------
+
+            original_base64 = (
+                encode_grayscale_image(
+                    original_uint8
+                )
+            )
+
+
+            mask_base64 = (
+                encode_grayscale_image(
+                    mask_uint8
+                )
+            )
+
+
+            overlay_base64 = (
+                encode_rgb_image(
+                    overlay_uint8
+                )
+            )
+
+
+            # --------------------------------------------
+            # Slice statistics
+            # --------------------------------------------
+
+            predicted_area = int(
+                tumor_areas[
+                    slice_index
+                ]
+            )
+
+
+            # --------------------------------------------
+            # Add slice to response
+            # --------------------------------------------
+
+            slice_visualizations.append(
+                {
+                    "slice_index": int(
+                        slice_index
+                    ),
+
+                    "predicted_area_pixels": int(
+                        predicted_area
+                    ),
+
+                    "has_prediction": bool(
+                        predicted_area > 0
+                    ),
+
+                    "original_image": str(
+                        original_base64
+                    ),
+
+                    "mask_image": str(
+                        mask_base64
+                    ),
+
+                    "overlay_image": str(
+                        overlay_base64
+                    )
+                }
+            )
+
+
+        print(
+            "Slice visualizations created:",
+            len(
+                slice_visualizations
+            )
+        )
+
+
+        # ====================================================
+        # Keep Largest-Slice Images for Compatibility
+        # ====================================================
+
+        best_visualization = (
+            slice_visualizations[
+                best_slice
+            ]
+        )
+
+
+        original_base64 = str(
+            best_visualization[
+                "original_image"
+            ]
+        )
+
+
+        mask_base64 = str(
+            best_visualization[
+                "mask_image"
+            ]
+        )
+
+
+        overlay_base64 = str(
+            best_visualization[
+                "overlay_image"
+            ]
+        )
+
+
+        # ====================================================
+        # Console Output
+        # ====================================================
 
         print(
             "Best slice:",
             best_slice
         )
 
-
-        # ----------------------------------------------------
-        # Get MRI + prediction
-        # ----------------------------------------------------
-
-        image_slice = flair_volume[
-            :,
-            :,
-            best_slice
-        ].astype(
-            np.float32
+        print(
+            "Predicted slices:",
+            predicted_tumor_slices
         )
 
-        prediction_slice = prediction_volume[
-            :,
-            :,
-            best_slice
-        ]
+        print(
+            "Predicted voxels:",
+            predicted_tumor_voxels
+        )
 
+        print(
+            "Largest slice area:",
+            largest_slice_area
+        )
 
-        # ----------------------------------------------------
-        # Normalize for display
-        # ----------------------------------------------------
+        print(
+            "Voxel spacing:",
+            voxel_spacing
+        )
 
-        min_value = image_slice.min()
-        max_value = image_slice.max()
-
-        if max_value > min_value:
-
-            image_slice = (
-                image_slice - min_value
-            ) / (
-                max_value - min_value
-            )
-
-        else:
-
-            image_slice = np.zeros_like(
-                image_slice
-            )
-
-
-        # ----------------------------------------------------
-        # Convert to RGB
-        # ----------------------------------------------------
-
-        overlay = np.stack(
-            [
-                image_slice,
-                image_slice,
-                image_slice
-            ],
-            axis=-1
+        print(
+            "Predicted segmentation volume:",
+            predicted_volume_cm3,
+            "cm³"
         )
 
 
-        # ----------------------------------------------------
-        # Add red predicted tumor
-        # ----------------------------------------------------
-
-        overlay[
-            prediction_slice == 1
-        ] = [
-            1.0,
-            0.0,
-            0.0
-        ]
-
-
-        # ----------------------------------------------------
-        # Convert to PNG
-        # ----------------------------------------------------
-
-        overlay_uint8 = (
-            overlay * 255
-        ).astype(
-            np.uint8
-        )
-
-
-        output_path = os.path.join(
-            tempfile.gettempdir(),
-            "brain_tumor_prediction.png"
-        )
-
-
-        cv2.imwrite(
-            output_path,
-            cv2.cvtColor(
-                overlay_uint8,
-                cv2.COLOR_RGB2BGR
-            )
-        )
-
-
-        # ----------------------------------------------------
-        # Return image
-        # ----------------------------------------------------
-
-        with open(output_path, "rb") as image_file:
-            image_base64 = base64.b64encode(
-                image_file.read()
-            ).decode("utf-8")
-
-        predicted_tumor_voxels = int(
-            np.sum(prediction_volume)
-        )
-
-        predicted_tumor_slices = int(
-            np.sum(
-                np.any(
-                    prediction_volume == 1,
-                    axis=(0, 1)
-                )
-            )
-        )
-
-        largest_slice_area = int(
-            np.sum(
-                prediction_volume[:, :, best_slice]
-            )
-        )
+        # ====================================================
+        # API Response
+        # ====================================================
 
         return {
-            "filename": file.filename,
+
+            "filename": str(
+                file.filename
+            ),
+
             "volume_shape": [
                 int(height),
                 int(width),
                 int(num_slices)
             ],
-            "total_slices": int(num_slices),
-            "predicted_tumor_slices": predicted_tumor_slices,
-            "largest_tumor_slice": best_slice,
-            "largest_slice_area_pixels": largest_slice_area,
-            "total_predicted_tumor_voxels": predicted_tumor_voxels,
-            "image": image_base64
-}
 
+            "total_slices": int(
+                num_slices
+            ),
+
+            "predicted_tumor_slices": int(
+                predicted_tumor_slices
+            ),
+
+            "largest_tumor_slice": int(
+                best_slice
+            ),
+
+            "largest_slice_area_pixels": int(
+                largest_slice_area
+            ),
+
+            "total_predicted_tumor_voxels": int(
+                predicted_tumor_voxels
+            ),
+
+            "voxel_spacing": [
+                float(voxel_x),
+                float(voxel_y),
+                float(voxel_z)
+            ],
+
+            "predicted_segmentation_volume_cm3": float(
+                predicted_volume_cm3
+            ),
+
+            # Largest-region images
+            "original_image": str(
+                original_base64
+            ),
+
+            "mask_image": str(
+                mask_base64
+            ),
+
+            "overlay_image": str(
+                overlay_base64
+            ),
+
+            # Backward compatibility
+            "image": str(
+                overlay_base64
+            ),
+
+            # Interactive viewer data
+            "slice_visualizations":
+                slice_visualizations
+        }
+
+
+    # ========================================================
+    # Error Handling
+    # ========================================================
+
+    except HTTPException:
+
+        raise
+
+
+    except Exception as error:
+
+        print(
+            "Prediction error:",
+            repr(error)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+    # ========================================================
+    # Remove Temporary MRI File
+    # ========================================================
 
     finally:
 
-        # Remove uploaded temporary MRI
-        if os.path.exists(temp_path):
+        if (
+            temp_path
+            and os.path.exists(
+                temp_path
+            )
+        ):
 
             os.remove(
                 temp_path

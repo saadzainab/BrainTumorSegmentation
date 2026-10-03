@@ -1,4 +1,3 @@
-
 * {
   box-sizing: border-box;
 }
@@ -15,12 +14,19 @@ input {
   font: inherit;
 }
 
+button {
+  transition: 0.2s ease;
+}
+
 .app-layout {
   display: flex;
   min-height: 100vh;
 }
 
-/* SIDEBAR */
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
 
 .sidebar {
   width: 285px;
@@ -73,7 +79,10 @@ input {
   margin-bottom: 17px;
 }
 
-/* UPLOAD AREA */
+
+/* =========================================================
+   UPLOAD AREA
+========================================================= */
 
 .upload-area {
   border: 1px dashed #668294;
@@ -123,6 +132,11 @@ input {
   display: none;
 }
 
+
+/* =========================================================
+   SELECTED FILE
+========================================================= */
+
 .selected-file {
   margin-top: 14px;
   padding: 12px;
@@ -142,6 +156,11 @@ input {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+
+
+/* =========================================================
+   PREDICT BUTTON
+========================================================= */
 
 .predict-button {
   width: 100%;
@@ -176,7 +195,10 @@ input {
   font-size: 12px;
 }
 
-/* MODEL INFORMATION */
+
+/* =========================================================
+   MODEL INFORMATION
+========================================================= */
 
 .model-info {
   border-top: 1px solid #34495b;
@@ -208,7 +230,10 @@ input {
   border-top: 1px solid #34495b;
 }
 
-/* MAIN CONTENT */
+
+/* =========================================================
+   MAIN CONTENT
+========================================================= */
 
 .main-content {
   flex: 1;
@@ -247,7 +272,10 @@ input {
   white-space: nowrap;
 }
 
-/* WELCOME */
+
+/* =========================================================
+   WELCOME CARD
+========================================================= */
 
 .welcome-card {
   background: white;
@@ -285,7 +313,10 @@ input {
   margin-top: 15px;
 }
 
-/* LOADER */
+
+/* =========================================================
+   LOADER
+========================================================= */
 
 .loader {
   width: 42px;
@@ -302,7 +333,10 @@ input {
   }
 }
 
-/* RESULT CARDS */
+
+/* =========================================================
+   RESULT CARDS
+========================================================= */
 
 .results-container {
   display: flex;
@@ -339,20 +373,63 @@ input {
   margin: 7px 0 0;
 }
 
-/* IMAGE */
+
+/* =========================================================
+   VISUALIZATION TABS
+========================================================= */
+
+.view-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+  margin-bottom: 18px;
+  background: #f3f7f8;
+  border: 1px solid #e5edef;
+  border-radius: 10px;
+}
+
+.view-tab {
+  flex: 1;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #71818d;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  background: #e8f1f1;
+  color: #287d83;
+}
+
+.view-tab.active {
+  background: white;
+  color: #287d83;
+  box-shadow: 0 2px 7px rgba(29, 54, 72, 0.09);
+}
+
+
+/* =========================================================
+   MRI IMAGE
+========================================================= */
 
 .image-container {
   width: 100%;
+  min-height: 400px;
   background: #101c27;
   border-radius: 10px;
-  padding: 15px;
+  padding: 20px;
   display: flex;
+  align-items: center;
   justify-content: center;
 }
 
 .image-container img {
   max-width: 100%;
-  max-height: 470px;
+  max-height: 500px;
   object-fit: contain;
   border-radius: 5px;
 }
@@ -369,9 +446,206 @@ input {
 .red-dot {
   width: 10px;
   height: 10px;
-  background: red;
+  min-width: 10px;
+  background: #e53935;
   border-radius: 50%;
 }
+
+.white-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  background: white;
+  border: 1px solid #9aabb6;
+  border-radius: 50%;
+}
+
+
+/* =========================================================
+   INTERACTIVE SLICE VIEWER
+========================================================= */
+
+.slice-viewer-controls {
+  margin-top: 20px;
+  padding: 18px 20px;
+  background: #f8fafb;
+  border: 1px solid #e4eaee;
+  border-radius: 10px;
+}
+
+.slice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 13px;
+}
+
+.slice-header span {
+  color: #788994;
+  font-size: 12px;
+}
+
+.slice-header strong {
+  color: #20394d;
+  font-size: 13px;
+}
+
+
+/* =========================================================
+   SLICE RANGE SLIDER
+========================================================= */
+
+.slice-slider {
+  width: 100%;
+  height: 6px;
+  margin: 10px 0 8px;
+  padding: 0;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  background: #d7e2e6;
+  border-radius: 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Chrome / Edge / Safari */
+.slice-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+
+  width: 18px;
+  height: 18px;
+
+  background: #287d83;
+  border: 3px solid white;
+  border-radius: 50%;
+
+  box-shadow: 0 1px 5px rgba(32, 57, 77, 0.3);
+  cursor: pointer;
+}
+
+/* Firefox */
+.slice-slider::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  background: #d7e2e6;
+  border-radius: 10px;
+}
+
+.slice-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+
+  background: #287d83;
+  border: 3px solid white;
+  border-radius: 50%;
+
+  box-shadow: 0 1px 5px rgba(32, 57, 77, 0.3);
+  cursor: pointer;
+}
+
+.slice-slider:focus {
+  outline: none;
+}
+
+/* =========================================================
+   SLICE NAVIGATION BUTTONS
+========================================================= */
+
+.slice-buttons {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.slice-buttons button {
+  min-height: 39px;
+  padding: 9px 14px;
+  background: white;
+  border: 1px solid #d8e2e6;
+  border-radius: 7px;
+  color: #526779;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.slice-buttons button:first-child {
+  justify-self: start;
+}
+
+.slice-buttons button:last-child {
+  justify-self: end;
+}
+
+.slice-buttons button:hover:not(:disabled) {
+  border-color: #287d83;
+  color: #287d83;
+  background: #f4f9f9;
+}
+
+.slice-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.slice-buttons .largest-region-button {
+  background: #287d83;
+  border-color: #287d83;
+  color: white;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.slice-buttons .largest-region-button:hover:not(:disabled) {
+  background: #35969a;
+  border-color: #35969a;
+  color: white;
+}
+
+
+/* =========================================================
+   CURRENT SLICE INFORMATION
+========================================================= */
+
+.slice-information {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e4eaee;
+}
+
+.slice-information > div {
+  padding: 12px 14px;
+  background: white;
+  border: 1px solid #e5edef;
+  border-radius: 8px;
+}
+
+.slice-information span {
+  display: block;
+  margin-bottom: 7px;
+  color: #81909b;
+  font-size: 10px;
+}
+
+.slice-information strong {
+  display: block;
+  color: #20394d;
+  font-size: 13px;
+}
+
+
+/* =========================================================
+   DOWNLOAD BUTTON
+========================================================= */
 
 .download-button {
   margin-top: 20px;
@@ -389,7 +663,10 @@ input {
   background: #e1f0ef;
 }
 
-/* REPORT */
+
+/* =========================================================
+   REPORT
+========================================================= */
 
 .report-icon {
   font-size: 23px;
@@ -423,7 +700,10 @@ input {
   overflow-wrap: anywhere;
 }
 
-/* WRITTEN REPORT */
+
+/* =========================================================
+   WRITTEN REPORT
+========================================================= */
 
 .written-report {
   background: #f8fafb;
@@ -446,7 +726,10 @@ input {
   margin: 0;
 }
 
-/* REPORT DETAILS */
+
+/* =========================================================
+   REPORT DETAILS
+========================================================= */
 
 .report-details {
   margin-top: 20px;
@@ -472,7 +755,10 @@ input {
   overflow-wrap: anywhere;
 }
 
-/* DISCLAIMER */
+
+/* =========================================================
+   DISCLAIMER
+========================================================= */
 
 .disclaimer {
   background: #fff8e9;
@@ -493,9 +779,13 @@ input {
   margin-bottom: 0;
 }
 
-/* RESPONSIVE */
+
+/* =========================================================
+   RESPONSIVE - TABLET
+========================================================= */
 
 @media (max-width: 950px) {
+
   .main-content {
     padding: 30px 22px;
   }
@@ -503,9 +793,19 @@ input {
   .statistics-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .image-container {
+    min-height: 330px;
+  }
 }
 
+
+/* =========================================================
+   RESPONSIVE - MOBILE
+========================================================= */
+
 @media (max-width: 650px) {
+
   .app-layout {
     flex-direction: column;
   }
@@ -537,11 +837,84 @@ input {
     padding: 17px;
   }
 
+
+  /* Visualization tabs */
+
+  .view-tabs {
+    flex-direction: column;
+  }
+
+  .view-tab {
+    width: 100%;
+  }
+
+
+  /* MRI */
+
+  .image-container {
+    min-height: 270px;
+    padding: 10px;
+  }
+
+
+  /* Slice navigation */
+
+  .slice-viewer-controls {
+    padding: 15px;
+  }
+
+  .slice-buttons {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .slice-buttons button,
+  .slice-buttons button:first-child,
+  .slice-buttons button:last-child {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .slice-information {
+    grid-template-columns: 1fr;
+  }
+
+
+  /* Statistics */
+
   .statistics-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
   .stat-box strong {
     font-size: 16px;
+  }
+
+
+  /* Report details */
+
+  .report-details div {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .report-details strong {
+    text-align: left;
+  }
+}
+
+
+/* =========================================================
+   VERY SMALL SCREENS
+========================================================= */
+
+@media (max-width: 420px) {
+
+  .statistics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card-heading {
+    align-items: flex-start;
   }
 }
